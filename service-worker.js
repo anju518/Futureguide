@@ -2,7 +2,7 @@
    แคชไฟล์แอปให้เปิดออฟไลน์ได้ ส่วนการส่งข้อมูลขึ้น Google Sheets
    จัดการโดยตัวแอป (คิวใน localStorage แล้วส่งเมื่อมีเน็ต) */
 
-const CACHE = 'futureguide-v2';
+const CACHE = 'futureguide-v4';
 const ASSETS = [
   './',
   './index.html',
