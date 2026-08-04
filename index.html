@@ -570,10 +570,10 @@ body.dark .kpi.k-green .v{ color:#63C795 }
       </div>
       <div class="field" id="wc-parent" style="display:none">
         <label>รหัสนักเรียนของบุตรหลาน</label>
-        <input id="wc-parent-sid" type="text" inputmode="numeric" placeholder="เช่น 12345" autocomplete="off">
-        <label style="margin-top:10px">ชื่อ - สกุลนักเรียน (ยืนยัน)</label>
-        <input id="wc-parent-name" type="text" placeholder="ชื่อ-สกุลของบุตรหลาน" autocomplete="off" maxlength="60">
-        <p class="thin" style="font-size:11.5px;margin-top:6px">* ระบุรหัสนักเรียนของบุตรหลานเพื่อทำแบบประเมินและดูผลของนักเรียน กรอกชื่อเพื่อยืนยันความถูกต้อง</p>
+        <input id="wc-parent-sid" type="text" inputmode="numeric" placeholder="เช่น 12345" autocomplete="off" oninput="parentResetFound()">
+        <button class="btn btn-quiet" style="margin-top:10px" onclick="parentFindStudent()">ค้นหานักเรียน</button>
+        <div id="wc-parent-found" style="display:none;margin-top:12px"></div>
+        <p class="thin" id="wc-parent-hint" style="font-size:11.5px;margin-top:8px">* กรอกรหัสนักเรียนของบุตรหลาน แล้วกด "ค้นหานักเรียน" ระบบจะแสดงชื่อให้ยืนยันว่าตรงกันก่อนเข้าใช้งาน</p>
       </div>
       <div class="field">
         <label data-i18n="fullname">ชื่อ - สกุล</label>
@@ -1578,6 +1578,7 @@ function selectRole(r){
   show(document.getElementById('wc-gpax'), false);
   const lg=document.getElementById('wc-login'); if(lg) lg.style.display=needLogin?'':'none';
   const pp=document.getElementById('wc-parent'); if(pp) pp.style.display=(r==='ผู้ปกครอง')?'':'none';
+  if(typeof parentResetFound==='function') parentResetFound();   // ล้างผลค้นหาเดิมเมื่อสลับบทบาท
   const nm=document.getElementById('wc-name');
   // ผู้ปกครองไม่ต้องกรอกชื่อตนเอง (ใช้รหัสนักเรียนจับคู่แทน) — ซ่อนช่องชื่อทุกบทบาท ยกเว้นกรณีที่ไม่มีบล็อกเฉพาะ
   if(nm&&nm.closest('.field')) nm.closest('.field').style.display='none';
@@ -2119,26 +2120,60 @@ function enterAsStudent(s){
   toast('ยินดีต้อนรับ '+(s.name||''));
 }
 /* ===== ผู้ปกครอง: จับคู่ด้วยรหัสนักเรียนของบุตรหลาน ===== */
-function parentLogin(){
+let parentFound=null;   // นักเรียนที่ค้นพบจากรหัส รอผู้ปกครองยืนยัน
+// ล้างผลค้นหาเมื่อผู้ปกครองแก้รหัสนักเรียน
+function parentResetFound(){
+  parentFound=null;
+  const box=document.getElementById('wc-parent-found');
+  if(box){ box.style.display='none'; box.innerHTML=''; }
+}
+// ค้นหานักเรียนจากรหัส แล้วแสดงชื่อให้ยืนยัน (ไม่ต้องพิมพ์ชื่อเอง)
+function parentFindStudent(){
   const sid=(document.getElementById('wc-parent-sid').value||'').trim();
-  const nm=(document.getElementById('wc-parent-name').value||'').trim();
   if(!sid){ toast('กรุณากรอกรหัสนักเรียนของบุตรหลาน'); return; }
-  if(!nm){ toast('กรุณากรอกชื่อ-สกุลนักเรียนเพื่อยืนยัน'); return; }
   const url=sheetsUrl();
   if(!url){ toast('ยังไม่ได้ตั้งค่า Google Sheets URL'); return; }
-  if(!navigator.onLine){ toast('ต้องเชื่อมต่ออินเทอร์เน็ตเพื่อจับคู่รหัสนักเรียน'); return; }
-  toast('กำลังตรวจสอบรหัสนักเรียน...');
+  if(!navigator.onLine){ toast('ต้องเชื่อมต่ออินเทอร์เน็ตเพื่อค้นหารหัสนักเรียน'); return; }
+  toast('กำลังค้นหานักเรียน...');
   const cb='__parentcb'+(++loginSeq);
   const tmo=setTimeout(()=>{ if(window[cb]){ delete window[cb]; toast('เชื่อมต่อไม่สำเร็จ – ตรวจการ Deploy Apps Script'); } },12000);
   window[cb]=(res)=>{ clearTimeout(tmo); delete window[cb];
-    if(res && res.ok && res.student){ enterAsParent(res.student); }
-    else { toast('จับคู่ไม่สำเร็จ: '+((res&&res.error)||'ตรวจสอบรหัสนักเรียน/ชื่อนักเรียน')); }
+    const box=document.getElementById('wc-parent-found');
+    if(res && res.ok && res.student){
+      parentFound=res.student;
+      const s=res.student;
+      const roomTxt=s.room?(' · ชั้น '+(s.grade||'')+'/'+s.room):(s.grade?(' · '+s.grade):'');
+      if(box){
+        box.style.display='block';
+        box.innerHTML=`
+          <div class="gp-info" style="padding:12px 14px;border-radius:12px;font-size:13px;line-height:1.5">
+            พบนักเรียน: <b style="color:var(--teal-600)">${(s.name||'').replace(/</g,'&lt;')}</b>${roomTxt}
+            <div class="thin" style="font-size:11.5px;margin-top:4px">โปรดตรวจสอบว่าเป็นบุตรหลานของท่าน แล้วกดยืนยัน</div>
+          </div>
+          <button class="btn" style="margin-top:10px" onclick="parentConfirm()">ยืนยัน – เข้าใช้งานของ ${(s.name||'').replace(/</g,'&lt;')}</button>`;
+      }
+    } else {
+      parentFound=null;
+      if(box){ box.style.display='none'; box.innerHTML=''; }
+      toast('ไม่พบนักเรียน: '+((res&&res.error)||'ตรวจสอบรหัสนักเรียนอีกครั้ง'));
+    }
     if(sc&&sc.parentNode) sc.parentNode.removeChild(sc);
   };
   const sc=document.createElement('script');
-  sc.src=url+(url.includes('?')?'&':'?')+'action=findstudent&sid='+encodeURIComponent(sid)+'&name='+encodeURIComponent(nm)+'&callback='+cb+'&t='+Date.now();
+  sc.src=url+(url.includes('?')?'&':'?')+'action=findstudent&sid='+encodeURIComponent(sid)+'&callback='+cb+'&t='+Date.now();
   sc.onerror=()=>{ clearTimeout(tmo); if(window[cb])delete window[cb]; toast('เชื่อมต่อไม่สำเร็จ'); };
   document.body.appendChild(sc);
+}
+// ผู้ปกครองยืนยันว่าเป็นบุตรหลานของตน → เข้าใช้งาน
+function parentConfirm(){
+  if(!parentFound){ toast('กรุณาค้นหานักเรียนก่อน'); return; }
+  enterAsParent(parentFound);
+}
+// เรียกจากปุ่ม "เริ่มใช้งาน" — ถ้ายังไม่ได้ค้นหาให้ค้นหาก่อน, ถ้าค้นหาแล้วให้เข้าใช้งานเลย
+function parentLogin(){
+  const sid=(document.getElementById('wc-parent-sid').value||'').trim();
+  if(parentFound && String(parentFound.sid||'').trim()===sid){ parentConfirm(); return; }
+  parentFindStudent();
 }
 function enterAsParent(s){
   state.role='ผู้ปกครอง';
